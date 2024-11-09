@@ -1,0 +1,1 @@
+A very VERY simple implementation of the Mandelbrot set with basic controls (zoom with mouse wheel, WASD for movement). Its main aim was to provide me with a way to get to know th e wgpu crate and understand the basics of how the shaders are used.
