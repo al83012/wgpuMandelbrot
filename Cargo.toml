@@ -12,3 +12,4 @@ log = "0.4"
 wgpu = "22.0"
 pollster = "0.4.0"
 bytemuck = { version = "1.16", features = [ "derive" ] }
+winit_input_helper = "0.16.0"

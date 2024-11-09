@@ -7,7 +7,11 @@ use wgpu::naga::SwitchValue;
 use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalSize;
 use winit::event::WindowEvent;
+use winit::keyboard::{Key, KeyCode};
 use winit::window::Window;
+use winit_input_helper::WinitInputHelper;
+use crate::camera;
+use crate::camera::CamValues;
 
 pub(crate) struct State<'a> {
     surface: wgpu::Surface<'a>,
@@ -23,6 +27,9 @@ pub(crate) struct State<'a> {
     start_time: Instant,
     time_buffer: wgpu::Buffer,
     time_bind_group: wgpu::BindGroup,
+    cam_values: CamValues,
+    cam_buffer: wgpu::Buffer,
+    cam_bind_group: wgpu::BindGroup,
 }
 
 impl<'a> State<'a> {
@@ -82,6 +89,13 @@ impl<'a> State<'a> {
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
+
+
+
+
+
+
+
         let start_time = std::time::Instant::now();
         let time_data = 0.0f32.to_ne_bytes();
         let time_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -89,7 +103,7 @@ impl<'a> State<'a> {
             contents: &time_data,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor{
+        let time_bind_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor{
             entries: &[wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::FRAGMENT,
@@ -99,21 +113,63 @@ impl<'a> State<'a> {
                     min_binding_size: wgpu::BufferSize::new(4),
                 },
                 count: None,
-            }],
-            label: Some("uniform_bind_group_layout"),
+            }
+            ],
+            label: Some("time_bind_group_layout"),
         });
         let time_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &bind_group_layout,
+            layout: &time_bind_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: time_buffer.as_entire_binding(),
             }],
-            label: Some("uniform_bind_group"),
+            label: Some("time_bind_group"),
         });
+
+
+
+
+        let start_cam = camera::CamValues::default();
+
+        let cam_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor{
+            label: Some("Cam buffer"),
+            contents: bytemuck::cast_slice(&[start_cam]),
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
+        });
+        let cam_bind_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor{
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(16), // 3x f32 -> 3x4 bytes but because of weird shit with alignment it is 16bytes
+                },
+                count: None,
+            }
+            ],
+            label: Some("cam_bind_group_layout"),
+        });
+        let cam_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &cam_bind_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: cam_buffer.as_entire_binding(),
+            }],
+            label: Some("cam_bind_group"),
+        });
+
+
+
+
+
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&bind_group_layout],
+                bind_group_layouts: &[
+                    &time_bind_layout,
+                    &cam_bind_layout
+                ],
                 push_constant_ranges: &[],
             });
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -167,7 +223,10 @@ impl<'a> State<'a> {
             render_pipeline,
             start_time,
             time_buffer,
-            time_bind_group
+            time_bind_group,
+            cam_values: start_cam,
+            cam_buffer,
+            cam_bind_group,
         }
     }
 
@@ -182,14 +241,65 @@ impl<'a> State<'a> {
         self.config.width = new_size.width;
         self.config.height = new_size.height;
         self.surface.configure(&self.device, &self.config);
+
+        let ratio = self.config.width as f32 / self.config.height as f32;
+        self.cam_values.set_ratio(ratio);
+        self.queue.write_buffer(&self.cam_buffer, 0, bytemuck::cast_slice(&[self.cam_values]));
         //info!("Resizing to {:?}|{:?}", self.config.width, self.config.height);
     }
 
     pub(crate) fn input(&mut self, event: &WindowEvent) -> bool {
+        /*match event {
+            WindowEvent::KeyboardInput {
+                device_id, event, is_synthetic
+            } => {
+                if let Key::Character(c) = &event.logical_key {
+                    let motion = match c.as_str(){
+                        "w" => {[0.0f32, 1.0]},
+                        "a" => {[-1.0, 0.0]},
+                        "s" => {[0.0, -1.0]},
+                        "d" => {[1.0, 0.0]},
+                        _ => {
+                            return false;
+                        }
+                    };
+
+                    println!("{:?}", self.cam_values);
+                    self.cam_values.offset(motion);
+                    self.queue.write_buffer(&self.cam_buffer, 0, bytemuck::cast_slice(&[self.cam_values]));
+
+                    return false;
+                }
+                return false;
+            },
+            _ => false,
+        }*/
         false
     }
 
-    pub(crate) fn update(&mut self) {
+    pub(crate) fn update(&mut self, input_helper: &WinitInputHelper) {
+        let mut motion = [0.0f32, 0.0];
+        if input_helper.key_held(KeyCode::KeyA) {
+            motion[0] = motion[0] - 1.0 / self.cam_values.get_zoom().exp();
+        }
+        if input_helper.key_held(KeyCode::KeyD) {
+            motion[0] = motion[0] + 1.0 / self.cam_values.get_zoom().exp();
+        }
+        if input_helper.key_held(KeyCode::KeyW) {
+            motion[1] = motion[1] + 1.0 / self.cam_values.get_zoom().exp();
+        }
+        if input_helper.key_held(KeyCode::KeyS) {
+            motion[1] = motion[1] - 1.0 / self.cam_values.get_zoom().exp();
+        }
+        if input_helper.key_pressed(KeyCode::Space) {
+            self.cam_values.set_offset([0.0,0.0]);
+        }
+        self.cam_values.offset(motion);
+
+
+        self.cam_values.zoom(input_helper.scroll_diff().1);
+        //println!("{:?}", self.cam_values);
+        self.queue.write_buffer(&self.cam_buffer, 0, bytemuck::cast_slice(&[self.cam_values]));
 
     }
 
@@ -198,6 +308,8 @@ impl<'a> State<'a> {
 
         let elapsed = self.start_time.elapsed().as_secs_f32();
         self.queue.write_buffer(&self.time_buffer, 0, bytemuck::cast_slice(&[elapsed]));
+
+
 
         let view = out.texture.create_view(&Default::default());
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -223,6 +335,7 @@ impl<'a> State<'a> {
                 // NEW!
                 render_pass.set_pipeline(&self.render_pipeline); // 2.
                 render_pass.set_bind_group(0, &self.time_bind_group, &[]);
+                render_pass.set_bind_group(1, &self.cam_bind_group, &[]);
                 render_pass.draw(0..6, 0..1);
             }
             // submit will accept anything that implements IntoIter

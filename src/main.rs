@@ -1,6 +1,7 @@
 mod state;
 mod pixel;
 mod compute;
+mod camera;
 
 use self::state::State;
 
@@ -24,12 +25,15 @@ pub async fn run() {
 
     let mut state = State::new(&window).await;
 
+    let mut input_helper = winit_input_helper::WinitInputHelper::new();
+
     event_loop.run(move |event, control_flow| {
+        input_helper.update(&event);
         match event {
             Event::WindowEvent {
                 ref event,
                 window_id,
-            } if window_id == state.window().id() => if !state.input(event) { // UPDATED!
+            } if window_id == state.window().id() =>  // UPDATED!
                 match event {
                     WindowEvent::CloseRequested
                     | WindowEvent::KeyboardInput {
@@ -51,7 +55,7 @@ pub async fn run() {
                             return;
                         }*/
 
-                        state.update();
+                        state.update(&input_helper);
                         match state.render() {
                             Ok(_) => {}
                             // Reconfigure the surface if it's lost or outdated
@@ -71,7 +75,7 @@ pub async fn run() {
                         }
                     }
                     _ => {}
-                }
+
             }
             _ => {}
         }
