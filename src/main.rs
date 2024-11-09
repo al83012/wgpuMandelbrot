@@ -1,4 +1,7 @@
 mod state;
+mod pixel;
+mod compute;
+
 use self::state::State;
 
 fn main() {

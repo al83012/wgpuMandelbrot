@@ -171,17 +171,7 @@ impl<'a> State<'a> {
                         Some(wgpu::RenderPassColorAttachment {
                             view: &view,
                             resolve_target: None,
-                            ops: wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(
-                                    wgpu::Color {
-                                        r: 0.1,
-                                        g: 0.2,
-                                        b: 0.3,
-                                        a: 1.0,
-                                    }
-                                ),
-                                store: wgpu::StoreOp::Store,
-                            }
+                            ops: wgpu::Operations::default(),
                         })
                     ],
                     depth_stencil_attachment: None,
@@ -191,7 +181,7 @@ impl<'a> State<'a> {
 
                 // NEW!
                 render_pass.set_pipeline(&self.render_pipeline); // 2.
-                render_pass.draw(0..3, 0..1);
+                render_pass.draw(0..6, 0..1);
             }
             // submit will accept anything that implements IntoIter
             self.queue.submit(std::iter::once(encoder.finish()));
