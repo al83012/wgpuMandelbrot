@@ -1,5 +1,16 @@
 
+// Define a uniform buffer for time
+struct Time {
+    time: f32
+};
 
+struct CameraInfo {
+    zoom: f32,
+    offset: vec2<f32>,
+}
+
+@group(0) @binding(0) var<uniform> time_uf: Time;
+//@group(0) @binding(1) var<uniform> cam: CameraInfo;
 
 @vertex
 fn vs_main(@builtin(vertex_index) index : u32) -> VertexOutput {
@@ -23,11 +34,11 @@ struct VertexOutput {
     @location(0) coord: vec2<f32>,
 };
 
-const ITERATIONS: i32 = 45;
+const ITERATIONS: i32 = 1000;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let c: vec2<f32> = (in.coord + vec2<f32>(-0.5, 0.)) * 1.3;
+    let c: vec2<f32> = (in.coord + vec2<f32>(-0.5, 0.)) * (1.3 / time_uf.time);
     var x: f32 = 0.;
     var y: f32 = 0.;
     var i: i32 = 0;
@@ -42,6 +53,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     let frac: f32 = f32(i) / f32(ITERATIONS);
-    //return vec4<f32>(frac * 5., frac * 1., frac * 3., 1.0);
-    return vec4<f32>(in.coord, 0.0, 0.0);
+    return vec4<f32>(frac * 5., frac * 1., frac * 3., 1.0);
+    //return vec4<f32>(in.coord, 0.0, 0.0);
 }

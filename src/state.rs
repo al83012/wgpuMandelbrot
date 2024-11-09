@@ -1,8 +1,10 @@
 use log::info;
 use std::default::Default;
+use std::time::Instant;
 use log::log;
 use wgpu::MemoryHints;
 use wgpu::naga::SwitchValue;
+use wgpu::util::DeviceExt;
 use winit::dpi::PhysicalSize;
 use winit::event::WindowEvent;
 use winit::window::Window;
@@ -18,6 +20,9 @@ pub(crate) struct State<'a> {
     // it gets dropped after it as the surface contains
     // unsafe references to the window's resources.
     window: &'a Window,
+    start_time: Instant,
+    time_buffer: wgpu::Buffer,
+    time_bind_group: wgpu::BindGroup,
 }
 
 impl<'a> State<'a> {
@@ -76,10 +81,39 @@ impl<'a> State<'a> {
             label: Some("Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
+
+        let start_time = std::time::Instant::now();
+        let time_data = 0.0f32.to_ne_bytes();
+        let time_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Time Buffer"),
+            contents: &time_data,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor{
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(4),
+                },
+                count: None,
+            }],
+            label: Some("uniform_bind_group_layout"),
+        });
+        let time_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: time_buffer.as_entire_binding(),
+            }],
+            label: Some("uniform_bind_group"),
+        });
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[],
+                bind_group_layouts: &[&bind_group_layout],
                 push_constant_ranges: &[],
             });
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -130,7 +164,10 @@ impl<'a> State<'a> {
             queue,
             config,
             size,
-            render_pipeline
+            render_pipeline,
+            start_time,
+            time_buffer,
+            time_bind_group
         }
     }
 
@@ -158,6 +195,10 @@ impl<'a> State<'a> {
 
     pub(crate) fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let out = self.surface.get_current_texture()?;
+
+        let elapsed = self.start_time.elapsed().as_secs_f32();
+        self.queue.write_buffer(&self.time_buffer, 0, bytemuck::cast_slice(&[elapsed]));
+
         let view = out.texture.create_view(&Default::default());
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Render Encoder"),
@@ -181,6 +222,7 @@ impl<'a> State<'a> {
 
                 // NEW!
                 render_pass.set_pipeline(&self.render_pipeline); // 2.
+                render_pass.set_bind_group(0, &self.time_bind_group, &[]);
                 render_pass.draw(0..6, 0..1);
             }
             // submit will accept anything that implements IntoIter
