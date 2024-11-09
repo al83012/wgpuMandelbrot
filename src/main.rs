@@ -1,6 +1,8 @@
-fn main() {
-    println!("Hello, world!");
+mod state;
+use self::state::State;
 
+fn main() {
+    pollster::block_on(run());
 }
 
 use winit::{
@@ -10,16 +12,18 @@ use winit::{
     window::WindowBuilder,
 };
 
-pub fn run() {
+pub async fn run() {
     env_logger::init();
     let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 
-    event_loop.run(move |event, control_flow| match event {
+    let mut state = State::new(&window).await;
+
+    event_loop.run(/*move*/ |event, control_flow| match event {
         Event::WindowEvent {
             ref event,
             window_id,
-        } if window_id == window.id() => match event {
+        } if window_id == window.id()  => if!state.input(event){ match event {
             WindowEvent::CloseRequested
             | WindowEvent::KeyboardInput {
                 event:
@@ -30,8 +34,11 @@ pub fn run() {
                 },
                 ..
             } => control_flow.exit(),
+            WindowEvent::Resized(new_size) => {
+                state.resize(*new_size);
+            }
             _ => {}
-        },
+        }},
         _ => {}
     }).expect("event loop run failed");
 }
